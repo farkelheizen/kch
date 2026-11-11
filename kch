@@ -26,6 +26,7 @@ Piped add/update input is passed to security in its process arguments.
 For env and run, use NAME or --map ENV_NAME=SECRET_NAME for each secret.
 Use --normalize NAME to replace dots and colons with underscores, or
 --strip-prefix NAME to remove the first dot- or colon-delimited prefix.
+env rejects Zsh special parameter names; use --map or run instead.
 EOF
 }
 
@@ -35,7 +36,8 @@ fail() {
 }
 
 decode_blob() {
-  local blob=$1 hex escaped='' byte
+  local blob=$1 hex escaped chunk part
+  local offset
   REPLY=''
   if [[ $blob == '<NULL>' ]]; then
     return 0
@@ -45,16 +47,16 @@ decode_blob() {
       fail 'invalid hexadecimal keychain metadata'
       return 1
     fi
-    while [[ -n $hex ]]; do
-      byte=${hex[1,2]}
-      if [[ $byte == 00 ]]; then
+    for (( offset = 1; offset <= ${#hex}; offset += 1024 )); do
+      part=${hex[offset,offset+1023]}
+      if [[ $part == ([0-9a-fA-F][0-9a-fA-F])#00* ]]; then
         fail 'keychain metadata contains a NUL byte'
         return 1
       fi
-      escaped+="\\x$byte"
-      hex=${hex[3,-1]}
+      escaped=${part//(#m)[0-9a-fA-F][0-9a-fA-F]/\\x$MATCH}
+      printf -v chunk '%b' "$escaped"
+      REPLY+=$chunk
     done
-    printf -v REPLY '%b' "$escaped"
   elif [[ $blob == \"*\" ]]; then
     REPLY=${blob[2,-2]}
   else
@@ -301,6 +303,14 @@ case $command in
       if (( $# < 2 )); then fail 'run requires -- and a command'; exit 2; fi
       shift
       run_command=("$@")
+    else
+      zmodload zsh/parameter || { fail 'could not inspect Zsh special parameters'; exit 1; }
+      for destination in "${destinations[@]}"; do
+        if [[ ${parameters[$destination]-} == *-special* ]]; then
+          fail "cannot export Zsh special parameter: $destination (use --map or run)"
+          exit 2
+        fi
+      done
     fi
     ;;
   *) fail "unknown command: $command"; exit 2 ;;

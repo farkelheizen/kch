@@ -21,6 +21,8 @@ if [[ $1 == default-keychain ]]; then
 elif [[ ${KCH_TEST_FAIL_FIND-} == 1 && $1 == find-generic-password ]]; then
   print -u2 'synthetic failure'
   exit 51
+elif [[ -n ${KCH_TEST_HEX-} && $1 == find-generic-password ]]; then
+  print -u2 -r -- "password: 0x${KCH_TEST_HEX}  \"synthetic\""
 else
   exec /usr/bin/security "$@"
 fi
@@ -120,6 +122,15 @@ for name in RANDOM UID values assignments run_command argv status; do
   grep -Fxq "$name=secret-for-$name" "$tmpdir/output"
 done
 grep -Fxq 'PATH=/usr/bin:/bin' "$tmpdir/output"
+for name in RANDOM UID PATH status; do
+  if "$cli" env SECRET "$name" > "$tmpdir/output" 2>/dev/null; then
+    print -u2 -r -- "env unexpectedly accepted special parameter: $name"
+    exit 1
+  fi
+  [[ ! -s "$tmpdir/output" ]]
+  expect_failure "$cli" env --map "$name=SECRET"
+done
+[[ $("$cli" env --map ORDINARY=RANDOM) == "export ORDINARY='secret-for-RANDOM'" ]]
 printf 'mapped-value' | "$cli" add 'MYAPP.KEY1'
 printf 'equal-value' | "$cli" add 'name=with=equals'
 "$cli" run SECRET --map RANDOM=MYAPP.KEY1 --map UID=name=with=equals --map values=COMPLEX -- /usr/bin/env > "$tmpdir/output"
@@ -233,4 +244,19 @@ expect_failure "$cli" add NUL < "$tmpdir/value"
 "$cli" delete SECRET >/dev/null
 expect_failure "$cli" get SECRET
 expect_failure "$cli" delete SECRET
+
+head -c 32768 /dev/zero | tr '\000' '\n' > "$tmpdir/value"
+printf 'utf8 café and trailing newlines\n\n' >> "$tmpdir/value"
+"$cli" add LARGE_MULTILINE < "$tmpdir/value"
+"$cli" copy LARGE_MULTILINE
+cmp -s "$tmpdir/value" "$tmpdir/clipboard"
+printf '%0511d' 0 > "$tmpdir/value"
+printf 'é\n' >> "$tmpdir/value"
+"$cli" add SPLIT_UTF8 < "$tmpdir/value"
+"$cli" copy SPLIT_UTF8
+cmp -s "$tmpdir/value" "$tmpdir/clipboard"
+env KCH_TEST_HEX=1001 "$cli" get SYNTHETIC > "$tmpdir/output"
+printf '\020\001\n' | cmp -s - "$tmpdir/output"
+if env KCH_TEST_HEX=610061 "$cli" get SYNTHETIC > "$tmpdir/output" 2>/dev/null; then exit 1; fi
+[[ ! -s "$tmpdir/output" ]]
 print 'Integration tests passed.'

@@ -132,7 +132,12 @@ interactive shell. Environment variables can still be inspected by authorized
 processes and are inherited by child processes.
 
 `env` prints shell-quoted `export` statements containing plaintext. Check
-success before evaluating trusted output:
+success before evaluating trusted output. Because assignments to Zsh special
+parameters such as `RANDOM`, `UID`, and `PATH` can change the value or shell
+behavior, `env` rejects those destinations. Map them to ordinary variable
+names or use `run`, which supports them in the child environment. Other
+pre-existing readonly or specially typed variables in the evaluating shell
+can also prevent an export; choose a different destination in that case.
 
 ```zsh
 if exports="$(kch env API_KEY DB_PASSWORD)"; then
