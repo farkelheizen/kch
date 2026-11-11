@@ -156,6 +156,63 @@ zsh -c '
   words=(kch run --map DEST)
   [[ -z $(_kch) ]]
 '
+printf 'normalized-value' | "$cli" add 'My.App:KEY'
+printf 'stripped-value' | "$cli" add 'OTHER:KEY2'
+printf 'nested-value' | "$cli" add 'A.B.C'
+printf 'invalid-start' | "$cli" add '123.VALUE'
+printf 'dash-value' | "$cli" add '-app:KEY'
+printf 'case-value' | "$cli" add 'app:Key'
+"$cli" run --normalize My.App:KEY --strip-prefix OTHER:KEY2 --map MANUAL=MYAPP.KEY1 SECRET -- /usr/bin/env > "$tmpdir/output"
+grep -Fxq 'My_App_KEY=normalized-value' "$tmpdir/output"
+grep -Fxq 'KEY2=stripped-value' "$tmpdir/output"
+grep -Fxq 'MANUAL=mapped-value' "$tmpdir/output"
+grep -Fxq 'SECRET=new-value' "$tmpdir/output"
+transform_exports=$("$cli" env --normalize My.App:KEY --strip-prefix OTHER:KEY2)
+eval "$transform_exports"
+[[ $My_App_KEY == normalized-value && $KEY2 == stripped-value ]]
+[[ $("$cli" env --strip-prefix '-app:KEY') == "export KEY='dash-value'" ]]
+[[ $("$cli" env --normalize 'app:Key') == "export app_Key='case-value'" ]]
+[[ $("$cli" --namespace dev_secrets env --normalize API_KEY) == "export API_KEY='namespace-secret'" ]]
+printf 'account-value' | "$cli" --account other add 'APP:NAME'
+[[ $("$cli" --account other env --strip-prefix APP:NAME) == "export NAME='account-value'" ]]
+for selection in '--normalize' '--strip-prefix'; do
+  expect_failure "$cli" env "$selection"
+  expect_failure "$cli" env "$selection" ''
+done
+expect_failure "$cli" env --strip-prefix NO_SEPARATOR
+expect_failure "$cli" env --strip-prefix ':NAME'
+expect_failure "$cli" env --strip-prefix 'APP:'
+expect_failure "$cli" env --strip-prefix A.B.C
+expect_failure "$cli" env --normalize 123.VALUE
+expect_failure "$cli" env --normalize My.App:KEY --map My_App_KEY=SECRET
+expect_failure "$cli" env SECRET --strip-prefix 'APP:SECRET'
+expect_failure "$cli" env --normalize A.B --normalize A:B
+if env KCH_TEST_FAIL_FIND=1 "$cli" env --normalize A.B --map A_B=SECRET > "$tmpdir/output" 2>&1; then exit 1; fi
+grep -q 'duplicate environment variable' "$tmpdir/output"
+if "$cli" env --normalize My.App:KEY --strip-prefix OTHER:MISSING > "$tmpdir/output" 2>/dev/null; then exit 1; fi
+[[ ! -s "$tmpdir/output" ]]
+expect_failure "$cli" run --normalize My.App:KEY --strip-prefix OTHER:MISSING -- touch "$tmpdir/should-not-exist"
+[[ ! -e "$tmpdir/should-not-exist" ]]
+zsh -c '
+  compdef() { : }
+  compadd() { print -r -l -- "$@" }
+  eval "$(kch completions)"
+  words=(kch env "")
+  CURRENT=3
+  output=$(_kch)
+  [[ $output == *--normalize* && $output == *--strip-prefix* ]]
+  words=(kch env --normalize "")
+  CURRENT=4
+  output=$(_kch)
+  [[ $output == *My.App:KEY* ]]
+  words=(kch run --strip-prefix "")
+  CURRENT=4
+  output=$(_kch)
+  [[ $output == *OTHER:KEY2* ]]
+  words=(kch run --strip-prefix OTHER:KEY2 -- "")
+  CURRENT=6
+  [[ -z $(_kch) ]]
+'
 if "$cli" run COMPLEX -- /bin/zsh -c 'exit 37'; then
   print -u2 'run failed to propagate child status'
   exit 1

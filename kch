@@ -24,6 +24,8 @@ is the account. With --namespace, SERVICE is the service and NAME is the
 account, as used by Python keyring. --account overrides the default account.
 Piped add/update input is passed to security in its process arguments.
 For env and run, use NAME or --map ENV_NAME=SECRET_NAME for each secret.
+Use --normalize NAME to replace dots and colons with underscores, or
+--strip-prefix NAME to remove the first dot- or colon-delimited prefix.
 EOF
 }
 
@@ -184,8 +186,8 @@ _kch() {
     if [[ $cmd == (env|run) && ${words[CURRENT-1]} == --map ]]; then
       [[ $words[CURRENT] == *=* ]] || return
       compset -P '*=' || return
-    elif [[ $cmd == (env|run) ]]; then
-      compadd -- --map
+    elif [[ $cmd == (env|run) && ${words[CURRENT-1]} != (--normalize|--strip-prefix) ]]; then
+      compadd -- --map --normalize --strip-prefix
     fi
     while IFS= read -r -d '' arg; do names+=("$arg"); done < <(command kch "${opts[@]}" __complete)
     compadd -- "${names[@]}"
@@ -255,6 +257,26 @@ case $command in
           fi
           destination=${2%%=*}
           secret_name=${2#*=}
+          shift 2
+          ;;
+        --normalize|--strip-prefix)
+          selection_option=$1
+          if (( $# < 2 )) || [[ -z $2 ]]; then
+            fail "$selection_option requires a secret name"; exit 2
+          fi
+          secret_name=$2
+          if [[ $selection_option == --normalize ]]; then
+            destination=${secret_name//[.:]/_}
+          else
+            if [[ $secret_name != *[.:]* ]]; then
+              fail "secret name has no prefix separator: $secret_name"; exit 2
+            fi
+            prefix=${secret_name%%[.:]*}
+            destination=${secret_name#*[.:]}
+            if [[ -z $prefix || -z $destination ]]; then
+              fail "secret name has an empty prefix or suffix: $secret_name"; exit 2
+            fi
+          fi
           shift 2
           ;;
         -*)

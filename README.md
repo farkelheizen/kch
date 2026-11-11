@@ -107,6 +107,20 @@ Mappings split at the first `=`. Destinations must be valid ASCII environment
 variable names and must not be repeated. All selections are checked and
 retrieved before any exports are printed or the child starts.
 
+For each secret, `--normalize` replaces every dot or colon with an underscore;
+`--strip-prefix` removes the part through the first dot or colon:
+
+```zsh
+kch run --normalize MYAPP.KEY1 --strip-prefix OTHER:KEY2 \
+  --map MANUAL=THIRD.secret PLAIN_KEY -- python app.py
+```
+
+These produce `MYAPP_KEY1`, `KEY2`, `MANUAL`, and `PLAIN_KEY`. Transformations
+preserve case. Prefix stripping requires a nonempty prefix and suffix, and
+neither form changes any other characters. Invalid destinations (such as
+`SUB.KEY` from `--strip-prefix APP.SUB.KEY`) and collisions between selections
+are rejected. Use `--map` when an automatic transformation isn't suitable.
+
 `run` then replaces itself with the command:
 
 ```zsh
