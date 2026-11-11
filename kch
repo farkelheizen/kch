@@ -13,8 +13,8 @@ Usage: kch [--account ACCOUNT | --namespace SERVICE] COMMAND [ARGS...]
   get NAME             Print a password and a terminating newline
   list [-i] [FILTER]   List names, optionally filtered; -i ignores case
   copy NAME | cp NAME  Copy a password to the clipboard
-  env NAME...          Print shell-quoted export statements
-  run NAME... -- CMD   Run CMD with secrets in its environment
+  env SELECTION...     Print shell-quoted export statements
+  run SELECTION... -- CMD  Run CMD with secrets in its environment
   open                 Open Keychain Access
   completions          Print Zsh completion setup
   help                 Show this help
@@ -23,6 +23,7 @@ Options precede the command. By default, NAME is the service and $USER
 is the account. With --namespace, SERVICE is the service and NAME is the
 account, as used by Python keyring. --account overrides the default account.
 Piped add/update input is passed to security in its process arguments.
+For env and run, use NAME or --map ENV_NAME=SECRET_NAME for each secret.
 EOF
 }
 
@@ -180,6 +181,12 @@ _kch() {
   if [[ $cmd == (get|update|delete|copy|cp|env|run) ]]; then
     [[ -n $account ]] && opts+=(--account "$account")
     [[ -n $namespace ]] && opts+=(--namespace "$namespace")
+    if [[ $cmd == (env|run) && ${words[CURRENT-1]} == --map ]]; then
+      [[ $words[CURRENT] == *=* ]] || return
+      compset -P '*=' || return
+    elif [[ $cmd == (env|run) ]]; then
+      compadd -- --map
+    fi
     while IFS= read -r -d '' arg; do names+=("$arg"); done < <(command kch "${opts[@]}" __complete)
     compadd -- "${names[@]}"
   elif [[ $cmd == list ]]; then
@@ -236,18 +243,43 @@ case $command in
     if [[ ${1-} == -i ]]; then ignore_case=1; shift; fi
     if (( $# > 1 )); then fail 'list accepts at most one filter'; exit 2; fi
     ;;
-  env)
-    if (( ! $# )); then fail 'env requires at least one name'; exit 2; fi
-    ;;
-  run)
-    names=()
-    while (( $# )) && [[ $1 != -- ]]; do names+=("$1"); shift; done
-    if (( ${#names} == 0 || $# < 2 )); then
-      fail 'run requires names, --, and a command'; exit 2
+  env|run)
+    destinations=()
+    secret_names=()
+    while (( $# )); do
+      if [[ $1 == -- && $command == run ]]; then break; fi
+      case $1 in
+        --map)
+          if (( $# < 2 )) || [[ $2 != *=* ]]; then
+            fail '--map requires ENV_NAME=SECRET_NAME'; exit 2
+          fi
+          destination=${2%%=*}
+          secret_name=${2#*=}
+          shift 2
+          ;;
+        -*)
+          fail "unknown selection option: $1"; exit 2
+          ;;
+        *)
+          destination=$1 secret_name=$1
+          shift
+          ;;
+      esac
+      if [[ $destination != [A-Za-z_][A-Za-z0-9_]# || -z $secret_name ]]; then
+        fail "invalid environment mapping: $destination"; exit 2
+      fi
+      if (( ${destinations[(Ie)$destination]} )); then
+        fail "duplicate environment variable: $destination"; exit 2
+      fi
+      destinations+=("$destination")
+      secret_names+=("$secret_name")
+    done
+    if (( ! ${#destinations} )); then fail "$command requires at least one selection"; exit 2; fi
+    if [[ $command == run ]]; then
+      if (( $# < 2 )); then fail 'run requires -- and a command'; exit 2; fi
+      shift
+      run_command=("$@")
     fi
-    shift
-    run_command=("$@")
-    set -- "${names[@]}"
     ;;
   *) fail "unknown command: $command"; exit 2 ;;
 esac
@@ -302,24 +334,19 @@ case $command in
     print -rn -- "$REPLY" | pbcopy
     ;;
   env|run)
-    for name in "$@"; do
-      if [[ $name != [A-Za-z_][A-Za-z0-9_]# ]]; then
-        fail "invalid environment variable name: $name"; exit 2
-      fi
-    done
     values=()
-    for name in "$@"; do
+    for name in "${secret_names[@]}"; do
       read_secret "$name" || exit $?
       values+=("$REPLY")
     done
     if [[ $command == env ]]; then
-      for (( i = 1; i <= $#; i++ )); do
-        print -r -- "export ${@[i]}=${(qq)values[i]}"
+      for (( i = 1; i <= ${#destinations}; i++ )); do
+        print -r -- "export ${destinations[i]}=${(qq)values[i]}"
       done
     else
       assignments=()
-      for (( i = 1; i <= $#; i++ )); do
-        assignments+=("${@[i]}=${values[i]}")
+      for (( i = 1; i <= ${#destinations}; i++ )); do
+        assignments+=("${destinations[i]}=${values[i]}")
       done
       run_with_secrets "${run_command[@]}"
     fi

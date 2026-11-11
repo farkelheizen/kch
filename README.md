@@ -95,8 +95,19 @@ to items created by `kch`.
 
 ## Environment and child processes
 
-Names supplied to `env` and `run` must be valid shell environment-variable
-names. `run` fetches all values first, then replaces itself with the command:
+Bare names supplied to `env` and `run` must be valid shell environment-variable
+names. To use a different Keychain name, map the destination explicitly:
+
+```zsh
+kch env API_KEY --map DB_PASSWORD=DATABASE:password
+kch run --map MYAPP_KEY1=MYAPP.KEY1 API_KEY -- python app.py
+```
+
+Mappings split at the first `=`. Destinations must be valid ASCII environment
+variable names and must not be repeated. All selections are checked and
+retrieved before any exports are printed or the child starts.
+
+`run` then replaces itself with the command:
 
 ```zsh
 kch run API_KEY DB_PASSWORD -- python app.py

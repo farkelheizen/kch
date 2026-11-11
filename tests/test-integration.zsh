@@ -120,6 +120,42 @@ for name in RANDOM UID values assignments run_command argv status; do
   grep -Fxq "$name=secret-for-$name" "$tmpdir/output"
 done
 grep -Fxq 'PATH=/usr/bin:/bin' "$tmpdir/output"
+printf 'mapped-value' | "$cli" add 'MYAPP.KEY1'
+printf 'equal-value' | "$cli" add 'name=with=equals'
+"$cli" run SECRET --map RANDOM=MYAPP.KEY1 --map UID=name=with=equals --map values=COMPLEX -- /usr/bin/env > "$tmpdir/output"
+grep -Fxq 'SECRET=new-value' "$tmpdir/output"
+grep -Fxq 'RANDOM=mapped-value' "$tmpdir/output"
+grep -Fxq 'UID=equal-value' "$tmpdir/output"
+mapped_exports=$("$cli" env SECRET --map MAPPED=MYAPP.KEY1 --map OTHER=name=with=equals --map QUOTED=COMPLEX)
+eval "$mapped_exports"
+[[ $SECRET == new-value && $MAPPED == mapped-value && $OTHER == equal-value && $QUOTED == $'quote\'$HOME\nlast\n' ]]
+[[ $("$cli" --namespace dev_secrets env --map MY_KEY=API_KEY) == "export MY_KEY='namespace-secret'" ]]
+[[ $("$cli" --account other env --map MY_KEY=other-secret) == "export MY_KEY='other'" ]]
+"$cli" run --map MY_KEY=MYAPP.KEY1 -- /bin/zsh -c '[[ $MY_KEY == mapped-value && $1 == "--literal" ]]' zsh --literal
+expect_failure "$cli" env --map
+expect_failure "$cli" env --map invalid
+expect_failure "$cli" env --map '=secret'
+expect_failure "$cli" env --map 'NAME='
+expect_failure "$cli" env --map 'A-B=SECRET'
+expect_failure "$cli" env SECRET --map SECRET=MYAPP.KEY1
+expect_failure "$cli" env --unknown SECRET
+expect_failure "$cli" run --map NAME=SECRET
+if "$cli" env SECRET --map ABSENT=MISSING > "$tmpdir/output" 2>/dev/null; then exit 1; fi
+[[ ! -s "$tmpdir/output" ]]
+expect_failure "$cli" run SECRET --map ABSENT=MISSING -- touch "$tmpdir/should-not-exist"
+[[ ! -e "$tmpdir/should-not-exist" ]]
+zsh -c '
+  compdef() { : }
+  compset() { [[ $* == "-P *=" ]]; }
+  compadd() { print -r -l -- "$@" }
+  eval "$(kch completions)"
+  words=(kch run --map "DEST=MY")
+  CURRENT=4
+  output=$(_kch)
+  [[ $output == *MYAPP.KEY1* ]]
+  words=(kch run --map DEST)
+  [[ -z $(_kch) ]]
+'
 if "$cli" run COMPLEX -- /bin/zsh -c 'exit 37'; then
   print -u2 'run failed to propagate child status'
   exit 1
