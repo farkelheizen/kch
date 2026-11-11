@@ -1,0 +1,317 @@
+#!/bin/zsh
+
+emulate -L zsh
+setopt extendedglob pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: kch [--account ACCOUNT | --namespace SERVICE] COMMAND [ARGS...]
+
+  add NAME             Add a password (prompt, or read stdin)
+  update NAME          Update an existing password (prompt, or read stdin)
+  delete NAME          Delete a password immediately
+  get NAME             Print a password and a terminating newline
+  list [-i] [FILTER]   List names, optionally filtered; -i ignores case
+  copy NAME | cp NAME  Copy a password to the clipboard
+  env NAME...          Print shell-quoted export statements
+  run NAME... -- CMD   Run CMD with secrets in its environment
+  open                 Open Keychain Access
+  completions          Print Zsh completion setup
+  help                 Show this help
+
+Options precede the command. By default, NAME is the service and $USER
+is the account. With --namespace, SERVICE is the service and NAME is the
+account, as used by Python keyring. --account overrides the default account.
+Piped add/update input is passed to security in its process arguments.
+EOF
+}
+
+fail() {
+  print -u2 -r -- "kch: $*"
+  return 1
+}
+
+decode_blob() {
+  local blob=$1 hex escaped='' byte
+  REPLY=''
+  if [[ $blob == '<NULL>' ]]; then
+    return 0
+  elif [[ $blob == 0x* ]]; then
+    hex=${${blob%% *}#0x}
+    if [[ -z $hex || $hex == *[^0-9a-fA-F]* ]] || (( ${#hex} % 2 )); then
+      fail 'invalid hexadecimal keychain metadata'
+      return 1
+    fi
+    while [[ -n $hex ]]; do
+      byte=${hex[1,2]}
+      if [[ $byte == 00 ]]; then
+        fail 'keychain metadata contains a NUL byte'
+        return 1
+      fi
+      escaped+="\\x$byte"
+      hex=${hex[3,-1]}
+    done
+    printf -v REPLY '%b' "$escaped"
+  elif [[ $blob == \"*\" ]]; then
+    REPLY=${blob[2,-2]}
+  else
+    fail 'invalid string keychain metadata'
+    return 1
+  fi
+}
+
+select_item() {
+  if [[ -n $namespace ]]; then
+    item_account=$1 item_service=$namespace
+  else
+    item_account=$account item_service=$1
+  fi
+}
+
+find_item() {
+  select_item "$1"
+  security find-generic-password -a "$item_account" -s "$item_service" "$keychain" >/dev/null
+}
+
+read_secret() {
+  select_item "$1"
+  local captured result
+  captured=$(security find-generic-password -a "$item_account" -s "$item_service" -g "$keychain" 2>&1 >/dev/null)
+  result=$?
+  if (( result != 0 )); then
+    print -u2 -r -- "$captured"
+    return $result
+  fi
+  if [[ $captured != 'password: '* ]]; then
+    fail 'unexpected password output from security'
+    return 1
+  fi
+  captured=${captured#password: }
+  if [[ -z $captured ]]; then
+    REPLY=''
+  else
+    decode_blob "$captured"
+  fi
+}
+
+list_names() {
+  local filter=$1 ignore_case=$2 format=$3 dump line class='' item_acct='' item_svce=''
+  local have_account=0 have_service=0 name
+  local -a names
+  dump=$(security dump-keychain "$keychain") || return $?
+  collect_item() {
+    [[ $class == genp && $have_account == 1 && $have_service == 1 ]] || return 0
+    if [[ -n $namespace ]]; then
+      [[ $item_svce == "$namespace" ]] || return 0
+      name=$item_acct
+    else
+      [[ $item_acct == "$account" ]] || return 0
+      name=$item_svce
+    fi
+    if [[ $ignore_case == 1 ]]; then
+      [[ ${(L)name} == *"${(L)filter}"* ]] || return 0
+    else
+      [[ $name == *"$filter"* ]] || return 0
+    fi
+    names+=("$name")
+  }
+  while IFS= read -r line; do
+    case $line in
+      'keychain: '*)
+        collect_item
+        class='' item_acct='' item_svce=''
+        have_account=0 have_service=0
+        ;;
+      'class: "genp"') class=genp ;;
+      '    "acct"<blob>='*)
+        [[ $class == genp ]] || continue
+        decode_blob "${line#*=}" || return 1
+        item_acct=$REPLY have_account=1
+        ;;
+      '    "svce"<blob>='*)
+        [[ $class == genp ]] || continue
+        decode_blob "${line#*=}" || return 1
+        item_svce=$REPLY have_service=1
+        ;;
+    esac
+  done <<< "$dump"
+  collect_item
+  for name in "${names[@]}"; do
+    if [[ $format == nul ]]; then
+      printf '%s\0' "$name"
+    else
+      print -r -- "${(q)name}"
+    fi
+  done
+}
+
+show_completions() {
+  cat <<'EOF'
+_kch() {
+  local cmd='' arg account='' namespace='' previous='' past_separator=0
+  local -a opts names
+  local i
+  for (( i = 2; i < CURRENT; i++ )); do
+    arg=$words[i]
+    if [[ $previous == --account ]]; then
+      account=$arg; previous=''; continue
+    elif [[ $previous == --namespace ]]; then
+      namespace=$arg; previous=''; continue
+    fi
+    if [[ -z $cmd ]]; then
+      case $arg in
+        --account|--namespace) previous=$arg ;;
+        *) cmd=$arg ;;
+      esac
+    elif [[ $cmd == run && $arg == -- ]]; then
+      past_separator=1
+    fi
+  done
+  [[ -n $previous || $past_separator == 1 ]] && return
+  if [[ -z $cmd ]]; then
+    compadd -- --account --namespace add update delete get list copy cp env run open completions help
+    return
+  fi
+  if [[ $cmd == (get|update|delete|copy|cp|env|run) ]]; then
+    [[ -n $account ]] && opts+=(--account "$account")
+    [[ -n $namespace ]] && opts+=(--namespace "$namespace")
+    while IFS= read -r -d '' arg; do names+=("$arg"); done < <(command kch "${opts[@]}" __complete)
+    compadd -- "${names[@]}"
+  elif [[ $cmd == list ]]; then
+    compadd -- -i
+  fi
+}
+compdef _kch kch
+EOF
+}
+
+account=${USER-}
+namespace=''
+while (( $# )); do
+  case $1 in
+    --account|--namespace)
+      option=$1
+      if (( $# < 2 )) || [[ -z $2 ]]; then
+        fail "$option requires a non-empty value"
+        exit 2
+      fi
+      if [[ -n ${selected_option-} ]]; then
+        fail 'choose only one --account or --namespace option'
+        exit 2
+      fi
+      selected_option=$option
+      if [[ $option == --account ]]; then account=$2; else namespace=$2; fi
+      shift 2
+      ;;
+    --) shift; break ;;
+    -h|--help) usage; exit 0 ;;
+    -*) fail "unknown option: $1"; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+command=${1:-help}
+(( $# )) && shift
+case $command in
+  help|-h|--help|completions|open|__complete)
+    if (( $# )); then fail "$command takes no arguments"; exit 2; fi
+    case $command in
+      help|-h|--help) usage; exit 0 ;;
+      completions) show_completions; exit 0 ;;
+      open) open -a 'Keychain Access'; exit $? ;;
+    esac
+    ;;
+  add|update|delete|get|copy|cp)
+    if (( $# != 1 )) || [[ -z $1 ]]; then
+      fail "$command requires exactly one non-empty name"; exit 2
+    fi
+    ;;
+  list)
+    ignore_case=0
+    if [[ ${1-} == -i ]]; then ignore_case=1; shift; fi
+    if (( $# > 1 )); then fail 'list accepts at most one filter'; exit 2; fi
+    ;;
+  env)
+    if (( ! $# )); then fail 'env requires at least one name'; exit 2; fi
+    ;;
+  run)
+    names=()
+    while (( $# )) && [[ $1 != -- ]]; do names+=("$1"); shift; done
+    if (( ${#names} == 0 || $# < 2 )); then
+      fail 'run requires names, --, and a command'; exit 2
+    fi
+    shift
+    run_command=("$@")
+    set -- "${names[@]}"
+    ;;
+  *) fail "unknown command: $command"; exit 2 ;;
+esac
+
+if [[ -z $namespace && -z $account ]]; then fail 'USER is not set; use --account'; exit 1; fi
+keychain_output=$(security default-keychain) || exit $?
+keychain_parts=(${(z)keychain_output})
+if (( ${#keychain_parts} != 1 )); then fail 'could not determine the default keychain'; exit 1; fi
+keychain=${(Q)keychain_parts[1]}
+
+case $command in
+  add|update)
+    find_item "$1" 2>/dev/null
+    find_status=$?
+    if [[ $command == add && $find_status == 0 ]]; then
+      fail "item already exists; use update: $1"; exit 1
+    elif [[ $command == update && $find_status == 44 ]]; then
+      fail "item not found: $1"; exit 44
+    elif (( find_status != 0 && find_status != 44 )); then
+      fail "unable to check item existence (security exit $find_status)"; exit $find_status
+    fi
+    select_item "$1"
+    update_opt=()
+    [[ $command == update ]] && update_opt=(-U)
+    if [[ -t 0 ]]; then
+      security add-generic-password "${update_opt[@]}" -a "$item_account" -s "$item_service" -w
+    else
+      secret=''
+      if IFS= read -r -d '' secret; then
+        fail 'NUL bytes are not supported'; exit 1
+      fi
+      print -u2 -r -- 'kch: warning: piped secret is exposed in security process arguments'
+      security add-generic-password "${update_opt[@]}" -a "$item_account" -s "$item_service" -w "$secret" "$keychain"
+    fi
+    ;;
+  get)
+    read_secret "$1" || exit $?
+    print -r -- "$REPLY"
+    ;;
+  delete)
+    select_item "$1"
+    security delete-generic-password -a "$item_account" -s "$item_service" "$keychain"
+    ;;
+  list) list_names "${1-}" "$ignore_case" text ;;
+  __complete) list_names '' 0 nul ;;
+  copy|cp)
+    read_secret "$1" || exit $?
+    print -rn -- "$REPLY" | pbcopy
+    ;;
+  env|run)
+    for name in "$@"; do
+      if [[ $name != [A-Za-z_][A-Za-z0-9_]# ]]; then
+        fail "invalid environment variable name: $name"; exit 2
+      fi
+    done
+    values=()
+    for name in "$@"; do
+      read_secret "$name" || exit $?
+      values+=("$REPLY")
+    done
+    if [[ $command == env ]]; then
+      for (( i = 1; i <= $#; i++ )); do
+        print -r -- "export ${@[i]}=${(qq)values[i]}"
+      done
+    else
+      for (( i = 1; i <= $#; i++ )); do
+        export "${@[i]}=${values[i]}" || exit $?
+      done
+      exec "${run_command[@]}"
+    fi
+    ;;
+esac
