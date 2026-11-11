@@ -27,6 +27,7 @@ For env and run, use NAME or --map ENV_NAME=SECRET_NAME for each secret.
 Use --normalize NAME to replace dots and colons with underscores, or
 --strip-prefix NAME to remove the first dot- or colon-delimited prefix.
 env rejects Zsh special parameter names; use --map or run instead.
+run cannot inject the special environment names _ or SHLVL.
 EOF
 }
 
@@ -159,7 +160,7 @@ run_with_secrets() {
     fi
   done
   local -h -x "${assignments[@]}" || return $?
-  exec "$@"
+  exec command -- "$@"
 }
 
 show_completions() {
@@ -308,6 +309,12 @@ case $command in
     if (( ! ${#destinations} )); then fail "$command requires at least one selection"; exit 2; fi
     if [[ $command == run ]]; then
       if (( $# < 2 )); then fail 'run requires -- and a command'; exit 2; fi
+      for destination in "${destinations[@]}"; do
+        if [[ $destination == (_|SHLVL) ]]; then
+          fail "cannot inject environment variable $destination: Zsh replaces it when executing commands"
+          exit 2
+        fi
+      done
       shift
       run_command=("$@")
     else

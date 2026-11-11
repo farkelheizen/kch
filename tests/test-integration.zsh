@@ -6,7 +6,7 @@ tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/kch-test.XXXXXXXX")
 export KCH_TEST_KEYCHAIN="$tmpdir/test.keychain-db"
 cleanup() {
   /usr/bin/security delete-keychain "$KCH_TEST_KEYCHAIN" >/dev/null 2>&1 || true
-  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names" "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd"
+  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names" "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd" "$tmpdir/alternate/export" "$tmpdir/alternate/-v"
   rmdir "$tmpdir/alternate"
   rmdir "$tmpdir"
 }
@@ -52,7 +52,15 @@ cat > "$tmpdir/alternate/pathcmd" <<'EOF'
 #!/bin/zsh
 print -r -- "alternate:$PATH:$1"
 EOF
-chmod +x "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd"
+cat > "$tmpdir/alternate/export" <<'EOF'
+#!/bin/zsh
+print -r -- "external:$SECRET"
+EOF
+cat > "$tmpdir/alternate/-v" <<'EOF'
+#!/bin/zsh
+print -r -- "dash:$SECRET:$1"
+EOF
+chmod +x "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd" "$tmpdir/alternate/export" "$tmpdir/alternate/-v"
 export PATH="$tmpdir:$PATH"
 cli="$root/kch"
 
@@ -140,6 +148,21 @@ expect_failure "$cli" run PATH -- pathcmd
 [[ $("$cli" run PATH -- "$tmpdir/pathcmd") == original ]]
 [[ $(cd "$tmpdir" && "$cli" run --map PATH=EMPTY -- pathcmd) == original ]]
 [[ $("$cli" run --map PATH=ALT_PATH --map path=SECRET -- pathcmd test) == "alternate:$tmpdir/alternate:test" ]]
+[[ $("$cli" run --map PATH=ALT_PATH SECRET -- export) == external:new-value ]]
+[[ $("$cli" run --map PATH=ALT_PATH SECRET -- -v argument) == dash:new-value:argument ]]
+if "$cli" run PATH SECRET -- export > "$tmpdir/output" 2>/dev/null; then
+  print -u2 'run unexpectedly executed a shell builtin'
+  exit 1
+fi
+[[ ! -s "$tmpdir/output" ]]
+for name in _ SHLVL; do
+  if "$cli" run --map "$name=SECRET" -- /usr/bin/env > "$tmpdir/output" 2>/dev/null; then
+    print -u2 -r -- "run unexpectedly accepted the $name environment variable"
+    exit 1
+  fi
+  [[ ! -s "$tmpdir/output" ]]
+  expect_failure "$cli" run "$name" -- /usr/bin/env
+done
 for name in RANDOM UID PATH status; do
   if "$cli" env SECRET "$name" > "$tmpdir/output" 2>/dev/null; then
     print -u2 -r -- "env unexpectedly accepted special parameter: $name"
