@@ -151,6 +151,13 @@ list_names() {
 }
 
 run_with_secrets() {
+  local assignment
+  for assignment in "${assignments[@]}"; do
+    if [[ $assignment == PATH=* ]]; then
+      PATH=${assignment#PATH=}
+      break
+    fi
+  done
   local -h -x "${assignments[@]}" || return $?
   exec "$@"
 }

@@ -6,7 +6,8 @@ tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/kch-test.XXXXXXXX")
 export KCH_TEST_KEYCHAIN="$tmpdir/test.keychain-db"
 cleanup() {
   /usr/bin/security delete-keychain "$KCH_TEST_KEYCHAIN" >/dev/null 2>&1 || true
-  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names"
+  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names" "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd"
+  rmdir "$tmpdir/alternate"
   rmdir "$tmpdir"
 }
 trap cleanup EXIT
@@ -42,6 +43,16 @@ exec /bin/cat "$@"
 EOF
 chmod +x "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat"
 ln -s "$root/kch" "$tmpdir/kch"
+mkdir "$tmpdir/alternate"
+cat > "$tmpdir/pathcmd" <<'EOF'
+#!/bin/zsh
+print -r -- original
+EOF
+cat > "$tmpdir/alternate/pathcmd" <<'EOF'
+#!/bin/zsh
+print -r -- "alternate:$PATH:$1"
+EOF
+chmod +x "$tmpdir/pathcmd" "$tmpdir/alternate/pathcmd"
 export PATH="$tmpdir:$PATH"
 cli="$root/kch"
 
@@ -122,6 +133,13 @@ for name in RANDOM UID values assignments run_command argv status; do
   grep -Fxq "$name=secret-for-$name" "$tmpdir/output"
 done
 grep -Fxq 'PATH=/usr/bin:/bin' "$tmpdir/output"
+printf '%s' "$tmpdir/alternate" | "$cli" add ALT_PATH
+[[ $("$cli" run --map PATH=ALT_PATH -- pathcmd test) == "alternate:$tmpdir/alternate:test" ]]
+[[ $("$cli" run SECRET -- pathcmd) == original ]]
+expect_failure "$cli" run PATH -- pathcmd
+[[ $("$cli" run PATH -- "$tmpdir/pathcmd") == original ]]
+[[ $(cd "$tmpdir" && "$cli" run --map PATH=EMPTY -- pathcmd) == original ]]
+[[ $("$cli" run --map PATH=ALT_PATH --map path=SECRET -- pathcmd test) == "alternate:$tmpdir/alternate:test" ]]
 for name in RANDOM UID PATH status; do
   if "$cli" env SECRET "$name" > "$tmpdir/output" 2>/dev/null; then
     print -u2 -r -- "env unexpectedly accepted special parameter: $name"

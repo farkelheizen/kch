@@ -129,7 +129,9 @@ kch run API_KEY DB_PASSWORD -- python app.py
 
 Only the child and its descendants inherit these variables, not the current
 interactive shell. Environment variables can still be inspected by authorized
-processes and are inherited by child processes.
+processes and are inherited by child processes. If a selection sets `PATH`,
+`run` uses that value to locate an unqualified command as well as passing it
+to the child. Use an absolute command path to bypass `PATH` lookup.
 
 `env` prints shell-quoted `export` statements containing plaintext. Check
 success before evaluating trusted output. Because assignments to Zsh special
