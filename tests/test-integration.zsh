@@ -6,7 +6,7 @@ tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/kch-test.XXXXXXXX")
 export KCH_TEST_KEYCHAIN="$tmpdir/test.keychain-db"
 cleanup() {
   /usr/bin/security delete-keychain "$KCH_TEST_KEYCHAIN" >/dev/null 2>&1 || true
-  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names"
+  rm -f "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat" "$tmpdir/kch" "$tmpdir/clipboard" "$tmpdir/value" "$tmpdir/output" "$tmpdir/names"
   rmdir "$tmpdir"
 }
 trap cleanup EXIT
@@ -30,7 +30,15 @@ cat > "$tmpdir/pbcopy" <<'EOF'
 [[ ${KCH_TEST_FAIL_CLIP-} == 1 ]] && exit 1
 cat > "${KCH_TEST_KEYCHAIN:h}/clipboard"
 EOF
-chmod +x "$tmpdir/security" "$tmpdir/pbcopy"
+cat > "$tmpdir/cat" <<'EOF'
+#!/bin/zsh
+if [[ ${KCH_TEST_FAIL_CAT-} == 1 ]]; then
+  print -rn -- 'partial input'
+  exit 1
+fi
+exec /bin/cat "$@"
+EOF
+chmod +x "$tmpdir/security" "$tmpdir/pbcopy" "$tmpdir/cat"
 ln -s "$root/kch" "$tmpdir/kch"
 export PATH="$tmpdir:$PATH"
 cli="$root/kch"
@@ -53,6 +61,14 @@ expect_failure "$cli" add SECRET
 printf 'new-value' | "$cli" update SECRET
 [[ $("$cli" get SECRET) == new-value ]]
 expect_failure "$cli" update MISSING
+expect_failure "$cli" update SECRET < "$tmpdir"
+[[ $("$cli" get SECRET) == new-value ]]
+expect_failure "$cli" add UNREADABLE < "$tmpdir"
+expect_failure "$cli" get UNREADABLE
+expect_failure env KCH_TEST_FAIL_CAT=1 "$cli" update SECRET < "$tmpdir/value"
+[[ $("$cli" get SECRET) == new-value ]]
+expect_failure env KCH_TEST_FAIL_CAT=1 "$cli" add PARTIAL < "$tmpdir/value"
+expect_failure "$cli" get PARTIAL
 
 printf 'namespace-secret' | "$cli" --namespace dev_secrets add API_KEY
 [[ $(/usr/bin/security find-generic-password -s dev_secrets -a API_KEY -w "$KCH_TEST_KEYCHAIN") == namespace-secret ]]
@@ -95,6 +111,15 @@ unset COMPLEX
 eval "$exports"
 [[ $COMPLEX == $'quote\'$HOME\nlast\n' ]]
 "$cli" run COMPLEX -- /bin/zsh -c '[[ $COMPLEX == $'"'"'quote\047$HOME\nlast\n'"'"' ]]'
+for name in RANDOM UID values assignments run_command argv status; do
+  printf 'secret-for-%s' "$name" | "$cli" add "$name"
+done
+printf '/usr/bin:/bin' | "$cli" add PATH
+"$cli" run RANDOM UID values assignments run_command argv status PATH -- /usr/bin/env > "$tmpdir/output"
+for name in RANDOM UID values assignments run_command argv status; do
+  grep -Fxq "$name=secret-for-$name" "$tmpdir/output"
+done
+grep -Fxq 'PATH=/usr/bin:/bin' "$tmpdir/output"
 if "$cli" run COMPLEX -- /bin/zsh -c 'exit 37'; then
   print -u2 'run failed to propagate child status'
   exit 1

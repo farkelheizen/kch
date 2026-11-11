@@ -145,6 +145,11 @@ list_names() {
   done
 }
 
+run_with_secrets() {
+  local -h -x "${assignments[@]}" || return $?
+  exec "$@"
+}
+
 show_completions() {
   cat <<'EOF'
 _kch() {
@@ -270,8 +275,12 @@ case $command in
     if [[ -t 0 ]]; then
       security add-generic-password "${update_opt[@]}" -a "$item_account" -s "$item_service" -w
     else
-      secret=''
-      if IFS= read -r -d '' secret; then
+      secret=$(command cat && print -rn -- '.') || {
+        fail 'could not read secret from stdin'
+        exit 1
+      }
+      secret=${secret%.}
+      if [[ $secret == *$'\0'* ]]; then
         fail 'NUL bytes are not supported'; exit 1
       fi
       print -u2 -r -- 'kch: warning: piped secret is exposed in security process arguments'
@@ -308,10 +317,11 @@ case $command in
         print -r -- "export ${@[i]}=${(qq)values[i]}"
       done
     else
+      assignments=()
       for (( i = 1; i <= $#; i++ )); do
-        export "${@[i]}=${values[i]}" || exit $?
+        assignments+=("${@[i]}=${values[i]}")
       done
-      exec "${run_command[@]}"
+      run_with_secrets "${run_command[@]}"
     fi
     ;;
 esac

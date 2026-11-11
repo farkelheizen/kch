@@ -66,8 +66,9 @@ kch add PRIVATE_KEY < private-key.pem
 with sufficient access may observe it, and `kch` prints a warning. Interactive
 input instead uses the native `security` prompt without putting the secret in
 arguments. Input cannot contain NUL bytes; empty input is supported. Input is
-limited by the OS command-line size limit. `get` adds one newline; use `copy`
-to copy the exact stored text without that extra newline.
+limited by the OS command-line size limit. A failed input read aborts without
+writing the item. `get` adds one newline; use `copy` to copy the exact stored
+text without that extra newline.
 
 ## Accounts and namespaces
 
@@ -87,7 +88,7 @@ account. For example, an item created above can be read with Python keyring's
 keychain. `--account` and `--namespace` cannot be combined. Namespace mode
 does not migrate existing items.
 
-Default listing includes *all* generic-password services with the selected
+Default listing includes _all_ generic-password services with the selected
 account, including items created by other applications. Namespace listing
 includes all generic-password accounts with that service. Neither is limited
 to items created by `kch`.
@@ -148,7 +149,11 @@ screen and in shell history.
   Likewise, a concurrent default-keychain change can affect interactive writes.
 - Passwords containing NUL bytes are unsupported. Other binary data is not a
   supported interface; use text. `security` may impose additional limits.
-- No license has been selected yet. Obtain permission before redistributing.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and [SECURITY.md](SECURITY.md)
 for vulnerability reporting.
+
+## License
+
+Copyright 2026 William Spratley. Licensed under the
+[Apache License, Version 2.0](LICENSE).
