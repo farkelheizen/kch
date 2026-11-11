@@ -43,8 +43,8 @@ Run `kch --version` (or `kch -V`) to see the version of the installed script.
 The version is maintained in the script. Releases follow Semantic Versioning
 (`MAJOR.MINOR.PATCH`) and use a matching Git tag, such as `v1.2.3`. A major
 release may include incompatible CLI changes; minor releases add
-backward-compatible features, and patch releases contain
-backward-compatible fixes.
+backward-compatible features, and patch releases contain backward-compatible
+fixes. Until `1.0.0`, minor releases may also include incompatible CLI changes.
 
 ## Commands
 

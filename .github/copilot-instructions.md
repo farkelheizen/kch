@@ -14,6 +14,9 @@
 - Use Semantic Versioning (`MAJOR.MINOR.PATCH`) for releases: patch for
   backward-compatible fixes, minor for backward-compatible features, and
   major for incompatible CLI changes.
+- Before `1.0.0`, minor releases may also contain incompatible CLI changes;
+  document them clearly. Apply the compatibility guarantees above starting
+  with `1.0.0`.
 - Keep the authoritative version in `kch` and expose it with `kch --version`.
   When cutting a release, make the version reported by the script match the
   Git tag `vMAJOR.MINOR.PATCH`.
