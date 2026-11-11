@@ -37,9 +37,19 @@ Run `kch help` to verify installation. To update, obtain the newer script and
 repeat the copy and permission steps. To uninstall, remove
 `~/.local/bin/kch`; stored passwords are not deleted.
 
+## Versioning
+
+Run `kch --version` (or `kch -V`) to see the version of the installed script.
+The version is maintained in the script. Releases follow Semantic Versioning
+(`MAJOR.MINOR.PATCH`) and use a matching Git tag, such as `v1.2.3`. A major
+release may include incompatible CLI changes; minor releases add
+backward-compatible features, and patch releases contain
+backward-compatible fixes.
+
 ## Commands
 
 ```zsh
+kch --version
 kch add API_KEY             # Interactive password prompt
 kch update API_KEY          # Requires an existing item
 kch get API_KEY             # Print secret, followed by one newline

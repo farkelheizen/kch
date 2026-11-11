@@ -18,8 +18,7 @@
   When cutting a release, make the version reported by the script match the
   Git tag `vMAJOR.MINOR.PATCH`.
 - Do not bump the release version or create a release tag for ordinary
-  unreleased changes. Do not claim version reporting is available until the
-  script implements it.
+  unreleased changes.
 - Before tagging, run the relevant checks, review user-facing documentation,
   and ensure the release notes accurately describe compatibility and security
   implications.

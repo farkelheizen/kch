@@ -3,10 +3,13 @@
 emulate -L zsh
 setopt extendedglob pipefail
 
+readonly KCH_VERSION=0.1.0
+
 usage() {
   cat <<'EOF'
 Usage: kch [--account ACCOUNT | --namespace SERVICE] COMMAND [ARGS...]
 
+  --version            Show the version
   add NAME             Add a password (prompt, or read stdin)
   update NAME          Update an existing password (prompt, or read stdin)
   delete NAME          Delete a password immediately
@@ -187,7 +190,8 @@ _kch() {
   done
   [[ -n $previous || $past_separator == 1 ]] && return
   if [[ -z $cmd ]]; then
-    compadd -- --account --namespace add update delete get list copy cp env run open completions help
+    compadd -- --account --namespace --version -V \
+      add update delete get list copy cp env run open completions help
     return
   fi
   if [[ $cmd == (get|update|delete|copy|cp|env|run) ]]; then
@@ -213,6 +217,14 @@ account=${USER-}
 namespace=''
 while (( $# )); do
   case $1 in
+    -V|--version)
+      if (( $# != 1 )); then
+        fail '--version takes no other arguments'
+        exit 2
+      fi
+      print -r -- "kch $KCH_VERSION"
+      exit 0
+      ;;
     --account|--namespace)
       option=$1
       if (( $# < 2 )) || [[ -z $2 ]]; then

@@ -10,7 +10,15 @@ if grep -nE '[[:blank:]]+$' "$cli" "$root/tests/test-cli.zsh" "$root/tests/test-
   exit 1
 fi
 "$cli" help | grep -q 'Usage: kch'
+"$cli" help | grep -q -- '--version'
+[[ $("$cli" --version) == 'kch 0.1.0' ]]
+[[ $("$cli" -V) == 'kch 0.1.0' ]]
+if "$cli" --version unexpected >/dev/null 2>&1; then
+  print -u2 '--version unexpectedly accepted extra arguments'
+  exit 1
+fi
 "$cli" completions | grep -q 'compdef _kch kch'
+"$cli" completions | grep -q -- '--version -V'
 if "$cli" nonexistent >/dev/null 2>&1; then
   print -u2 'Unknown command unexpectedly succeeded'
   exit 1
