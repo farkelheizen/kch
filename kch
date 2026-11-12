@@ -3,7 +3,7 @@
 emulate -L zsh
 setopt extendedglob pipefail
 
-readonly KCH_VERSION=0.1.0
+readonly KCH_VERSION=0.2.0
 
 usage() {
   cat <<'EOF'
@@ -12,6 +12,7 @@ Usage: kch [--account ACCOUNT | --namespace SERVICE] COMMAND [ARGS...]
   --version            Show the version
   add NAME             Add a password (prompt, or read stdin)
   update NAME          Update an existing password (prompt, or read stdin)
+  put NAME             Create or replace a password (prompt, or read stdin)
   delete NAME          Delete a password immediately
   get NAME             Print a password and a terminating newline
   list [-i] [FILTER]   List names, optionally filtered; -i ignores case
@@ -25,7 +26,7 @@ Usage: kch [--account ACCOUNT | --namespace SERVICE] COMMAND [ARGS...]
 Options precede the command. By default, NAME is the service and $USER
 is the account. With --namespace, SERVICE is the service and NAME is the
 account, as used by Python keyring. --account overrides the default account.
-Piped add/update input is passed to security in its process arguments.
+Piped add/update/put input is passed to security in its process arguments.
 For env and run, use NAME or --map ENV_NAME=SECRET_NAME for each secret.
 Use --normalize NAME to replace dots and colons with underscores, or
 --strip-prefix NAME to remove the first dot- or colon-delimited prefix.
@@ -191,7 +192,7 @@ _kch() {
   [[ -n $previous || $past_separator == 1 ]] && return
   if [[ -z $cmd ]]; then
     compadd -- --account --namespace --version -V \
-      add update delete get list copy cp env run open completions help
+      add update put delete get list copy cp env run open completions help
     return
   fi
   if [[ $cmd == (get|update|delete|copy|cp|env|run) ]]; then
@@ -257,7 +258,7 @@ case $command in
       open) open -a 'Keychain Access'; exit $? ;;
     esac
     ;;
-  add|update|delete|get|copy|cp)
+  add|update|put|delete|get|copy|cp)
     if (( $# != 1 )) || [[ -z $1 ]]; then
       fail "$command requires exactly one non-empty name"; exit 2
     fi
@@ -349,19 +350,21 @@ if (( ${#keychain_parts} != 1 )); then fail 'could not determine the default key
 keychain=${(Q)keychain_parts[1]}
 
 case $command in
-  add|update)
-    find_item "$1" 2>/dev/null
-    find_status=$?
-    if [[ $command == add && $find_status == 0 ]]; then
-      fail "item already exists; use update: $1"; exit 1
-    elif [[ $command == update && $find_status == 44 ]]; then
-      fail "item not found: $1"; exit 44
-    elif (( find_status != 0 && find_status != 44 )); then
-      fail "unable to check item existence (security exit $find_status)"; exit $find_status
+  add|update|put)
+    if [[ $command != put ]]; then
+      find_item "$1" 2>/dev/null
+      find_status=$?
+      if [[ $command == add && $find_status == 0 ]]; then
+        fail "item already exists; use update: $1"; exit 1
+      elif [[ $command == update && $find_status == 44 ]]; then
+        fail "item not found: $1"; exit 44
+      elif (( find_status != 0 && find_status != 44 )); then
+        fail "unable to check item existence (security exit $find_status)"; exit $find_status
+      fi
     fi
     select_item "$1"
     update_opt=()
-    [[ $command == update ]] && update_opt=(-U)
+    [[ $command == update || $command == put ]] && update_opt=(-U)
     if [[ -t 0 ]]; then
       security add-generic-password "${update_opt[@]}" -a "$item_account" -s "$item_service" -w
     else
