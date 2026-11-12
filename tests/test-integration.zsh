@@ -22,6 +22,9 @@ if [[ $1 == default-keychain ]]; then
 elif [[ ${KCH_TEST_FAIL_FIND-} == 1 && $1 == find-generic-password ]]; then
   print -u2 'synthetic failure'
   exit 51
+elif [[ ${KCH_TEST_FAIL_WRITE-} == 1 && $1 == add-generic-password ]]; then
+  print -u2 'synthetic write failure'
+  exit 52
 elif [[ -n ${KCH_TEST_HEX-} && $1 == find-generic-password ]]; then
   print -u2 -r -- "password: 0x${KCH_TEST_HEX}  \"synthetic\""
 else
@@ -82,6 +85,14 @@ expect_failure "$cli" add SECRET
 printf 'new-value' | "$cli" update SECRET
 [[ $("$cli" get SECRET) == new-value ]]
 expect_failure "$cli" update MISSING
+expect_failure "$cli" put
+expect_failure "$cli" put FIRST SECOND
+printf 'put-created' | env KCH_TEST_FAIL_FIND=1 "$cli" put PUT_CREATED
+[[ $("$cli" get PUT_CREATED) == put-created ]]
+printf 'put-replaced' | "$cli" put PUT_CREATED
+[[ $("$cli" get PUT_CREATED) == put-replaced ]]
+expect_failure env KCH_TEST_FAIL_WRITE=1 "$cli" put WRITE_FAILURE
+expect_failure "$cli" get WRITE_FAILURE
 expect_failure "$cli" update SECRET < "$tmpdir"
 [[ $("$cli" get SECRET) == new-value ]]
 expect_failure "$cli" add UNREADABLE < "$tmpdir"
@@ -93,6 +104,10 @@ expect_failure "$cli" get PARTIAL
 
 printf 'namespace-secret' | "$cli" --namespace dev_secrets add API_KEY
 [[ $(/usr/bin/security find-generic-password -s dev_secrets -a API_KEY -w "$KCH_TEST_KEYCHAIN") == namespace-secret ]]
+printf 'namespace-put' | "$cli" --namespace dev_secrets put PUT_KEY
+[[ $(/usr/bin/security find-generic-password -s dev_secrets -a PUT_KEY -w "$KCH_TEST_KEYCHAIN") == namespace-put ]]
+printf 'namespace-updated' | "$cli" --namespace dev_secrets put PUT_KEY
+[[ $(/usr/bin/security find-generic-password -s dev_secrets -a PUT_KEY -w "$KCH_TEST_KEYCHAIN") == namespace-updated ]]
 [[ $("$cli" --namespace dev_secrets list -i api) == API_KEY ]]
 printf 'other' | "$cli" --account other add other-secret
 [[ $("$cli" --account other list) == other-secret ]]

@@ -52,6 +52,7 @@ fixes. Until `1.0.0`, minor releases may also include incompatible CLI changes.
 kch --version
 kch add API_KEY             # Interactive password prompt
 kch update API_KEY          # Requires an existing item
+kch put API_KEY             # Create or replace, without an existence check
 kch get API_KEY             # Print secret, followed by one newline
 kch list                    # List names for the current account
 kch list API                # Literal, case-sensitive substring
@@ -63,22 +64,25 @@ kch help
 ```
 
 Quote names containing spaces. List output uses Zsh shell quoting. A list
-with no matches prints nothing and succeeds. Add fails for duplicates; update,
-get, copy and delete fail if the item is missing.
+with no matches prints nothing and succeeds. Add fails for duplicates; update
+fails if the item is missing. Put creates the item if missing and immediately
+replaces its password if it exists. Get, copy and delete fail if the item is
+missing.
 
 To supply a secret via stdin, including multiple lines and trailing newlines:
 
 ```zsh
 kch add PRIVATE_KEY < private-key.pem
+kch put PRIVATE_KEY < private-key.pem
 ```
 
 **Piped input is passed to `security` as a process argument.** Other processes
-with sufficient access may observe it, and `kch` prints a warning. Interactive
-input instead uses the native `security` prompt without putting the secret in
-arguments. Input cannot contain NUL bytes; empty input is supported. Input is
-limited by the OS command-line size limit. A failed input read aborts without
-writing the item. `get` adds one newline; use `copy` to copy the exact stored
-text without that extra newline.
+with sufficient access may observe it, and `kch` prints a warning. This applies
+to `add`, `update`, and `put`. Interactive input instead uses the native
+`security` prompt without putting the secret in arguments. Input cannot contain
+NUL bytes; empty input is supported. Input is limited by the OS command-line
+size limit. A failed input read aborts without writing the item. `get` adds one
+newline; use `copy` to copy the exact stored text without that extra newline.
 
 ## Accounts and namespaces
 
