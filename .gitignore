@@ -1,2 +1,12 @@
-/docs_local/
+# Operating system files
 .DS_Store
+Thumbs.db
+
+# Agents configuration files
+.agents
+
+# planning with files
+.planning
+
+# Local VS Code workspace file
+*.code-workspace

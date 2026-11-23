@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "window.title": "kch",
+    "chat.agent.enabled": true
+  },
+  "folders": [
+    {
+      "name": "kch source",
+      "path": "."
+    },
+    {
+      "name": "kch docs",
+      "path": "path_to_local_kch_docs"
+    }
+  ]
+}
