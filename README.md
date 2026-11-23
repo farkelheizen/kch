@@ -182,6 +182,31 @@ eval "$(kch completions)"
 Completion looks up names from Keychain metadata. Names may be visible on
 screen and in shell history.
 
+## Agent skill
+
+The optional [kch agent skill](skills/kch/SKILL.md) provides guidance for
+using an installed `kch` with an AI agent while reducing exposure of secrets.
+It follows the [Agent Skills specification](https://agentskills.io/specification).
+Installing `kch` does not install the skill.
+
+After the skill is published in this repository, you can install it for
+supported agents across your projects using the optional
+[`skills` CLI](https://github.com/vercel-labs/skills). The installer requires
+Node.js; `kch` does not:
+
+```zsh
+npx skills add farkelheizen/kch --skill kch --global
+```
+
+Choose your agent when prompted. Omit `--global` to install for the current
+project only. Alternatively, copy the `skills/kch` directory from your clone
+into the skill directory supported by your agent. Discovery and installation
+locations vary; running Zsh alone does not imply skill support.
+
+Review the skill and the installer's behavior before use. The skill is guidance,
+not an access-control boundary: agent tools and child processes can still
+expose secrets.
+
 ## Security and limitations
 
 - Operations target the macOS default keychain (`security default-keychain`),
