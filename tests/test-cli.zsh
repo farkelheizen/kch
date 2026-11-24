@@ -11,8 +11,8 @@ if grep -nE '[[:blank:]]+$' "$cli" "$root/tests/test-cli.zsh" "$root/tests/test-
 fi
 "$cli" help | grep -q 'Usage: kch'
 "$cli" help | grep -q -- '--version'
-[[ $("$cli" --version) == 'kch 0.2.0' ]]
-[[ $("$cli" -V) == 'kch 0.2.0' ]]
+[[ $("$cli" --version) == 'kch 0.3.0' ]]
+[[ $("$cli" -V) == 'kch 0.3.0' ]]
 if "$cli" --version unexpected >/dev/null 2>&1; then
   print -u2 '--version unexpectedly accepted extra arguments'
   exit 1
