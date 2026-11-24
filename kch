@@ -3,7 +3,7 @@
 emulate -L zsh
 setopt extendedglob pipefail
 
-readonly KCH_VERSION=0.2.0
+readonly KCH_VERSION=0.3.0
 
 usage() {
   cat <<'EOF'
